@@ -269,8 +269,8 @@ FILE_OK:
      call FILE_READ ;ok, read EXE header
      ;mov edx,DWORD [NEW_HDR+3CH] ;ok, put offset to new header in dx  ;pe gui offset
      invoke MessageBoxA, HWND_DESKTOP,e_lfanew ,notify_msg, MB_OK
-
-      mov dword[NH_OFFSET],e_lfanew ;and save it here
+      mov ebx,dword[e_lfanew]
+      mov dword[NH_OFFSET],ebx ;and save it here
 
       mov ecx,dword[e_lfanew] ;PE signature
       mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
@@ -288,18 +288,22 @@ FILE_OK:
        invoke MessageBoxA, HWND_DESKTOP,NEW_HDR ,notify_msg, MB_OK
 
 
-       mov ecx,dword[e_lfanew]
-       add ecx,22h ;Segment table
-       mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
+      mov ecx,dword[e_lfanew] ;PE signature
+       add ecx,22h
+      mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
 
-       call FILE_SEEK_ST
+      call FILE_SEEK_ST
 
-      mov edi,HDR_SEGMENT_TABLE
-      mov ecx,8 ;qword
 
-     call FILE_READ ;ok, read EXE header
-     ;mov edx,DWORD [NEW_HDR+3CH] ;ok, put offset to new header in dx  ;pe gui offset
-     invoke MessageBoxA, HWND_DESKTOP,dword[HDR_SEGMENT_TABLE] ,notify_msg, MB_OK
+       ; Mover el puntero del archivo a la posición 80h desde el inicio del archivo
+
+
+       mov edi,HDR_SEGMENT_TABLE
+       xor ecx,ecx
+       mov ecx,8
+
+       call FILE_READ
+       invoke MessageBoxA, HWND_DESKTOP,HDR_SEGMENT_TABLE ,notify_msg, MB_OK
 
       cmp DWORD[NEW_HDR],"PE" ;see if this is ’NE’ new header ID
       jnz SHORT FN1 ;nope, not a Windows EXE!
@@ -320,13 +324,13 @@ FILE_OK:
         mov ebx,dword[fileHandle] ; Guardar el puntero al archivo en ebx
         call  FILE_SEEK_ST
         ; Lee el campo e_lfanew del encabezado MZ
-
+        xor ecx,ecx
         mov ecx, 4
         mov edi, EntryPoint
         mov ebx,dword[fileHandle]
 
         call FILE_READ
-        invoke MessageBoxA, HWND_DESKTOP,dword[EntryPoint],notify_msg, MB_OK
+        invoke MessageBoxA, HWND_DESKTOP,EntryPoint,notify_msg, MB_OK
 
 
         ;mov edx,DWORD[NEW_HDR+16H] ;get initial cs
@@ -941,7 +945,7 @@ FILE_SEEK:
 
   push ebp
    mov ebp, esp
- RSEEK: invoke fseek, ebx,ecx,edx     ;PE header
+ RSEEK: invoke fseek, ebx,ecx,edx
 ; Mover el puntero del archivo a la posición ecx desde el inicio del archivo
 mov esp, ebp
 pop ebp
@@ -1019,7 +1023,7 @@ LOG_SEC DD ? ;logical sector size for program
     NEW_HDR2 DW 40h dup (0) ;space to put new exe header in
     e_lfanew  DD ?
     EntryPoint  DD ?
-    HDR_SEGMENT_TABLE db 0,0,0,0,0,0,0,0
+    HDR_SEGMENT_TABLE db 8 dup( 0),0
     TEMP DB DATABUF_SIZE dup (?) ;temporary data storage
     ;file params
     DesiredAccess dd GENERIC_READ or GENERIC_WRITE
